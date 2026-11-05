@@ -8,7 +8,8 @@ name: Build, smoke-test and publish the qr image to GHCR
 #   - docker-base-image.yml failed daily until GitHub disabled it for inactivity
 #
 # Single-arch (linux/amd64) on purpose: the node is x86, and the multi-arch QEMU build took
-# ~2 hours. arm64 stays available for laptop use via `docker buildx build --platform`.
+# ~2 hours. The base is pinned to the amd64 manifest, so an arm64 build needs
+# `--platform linux/amd64` under emulation rather than a different base.
 
 on:
   push:
@@ -18,8 +19,6 @@ on:
     branches: ["master"]
   workflow_dispatch:
 
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterquant
 
 permissions:
   contents: read
@@ -33,6 +32,21 @@ jobs:
         with:
           fetch-depth: 0 # setuptools_scm needs tags
 
+      # One source for both the published ref and the version baked into the image.
+      # GHCR paths must be lowercase; github.repository_owner keeps the account's case.
+      - name: Image path and version
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jupyterquant" >> "$GITHUB_ENV"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            d="$(date -u +%Y.%m.%d)"; s="$(git rev-parse --short HEAD)"
+            v="$d-$s"
+            echo "DATE_TAG=$d" >> "$GITHUB_ENV"
+            echo "SHORT_SHA=$s" >> "$GITHUB_ENV"
+          fi
+          echo "IMAGE_VERSION=$v" >> "$GITHUB_ENV"
+
       - name: Read build args
         id: env
         run: |
@@ -40,7 +54,6 @@ jobs:
           set -a; . ./.env; set +a
           echo "user_id=${USER_ID}" >> "$GITHUB_OUTPUT"
           echo "user_gid=${USER_GID}" >> "$GITHUB_OUTPUT"
-          echo "py=${IMG_PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -57,7 +70,7 @@ jobs:
             USER=quant
             USER_ID=${{ steps.env.outputs.user_id }}
             USER_GID=${{ steps.env.outputs.user_gid }}
-            IMG_PYTHON_VERSION=${{ steps.env.outputs.py }}
+            IMAGE_VERSION=${{ env.IMAGE_VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,10 +88,12 @@ jobs:
       - name: Tag
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
         run: |
-          short=$(git rev-parse --short HEAD)
-          date=$(date -u +%Y.%m.%d)
-          { echo "$IMAGE:$date-$short"; echo "$IMAGE:$date"; echo "$IMAGE:$short"; } > /tmp/tags
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then echo "$IMAGE:${GITHUB_REF_NAME}" >> /tmp/tags; fi
+          echo "$IMAGE:$IMAGE_VERSION" > /tmp/tags
+          # branch builds also get the date and commit tags, from the same computation
+          if [ -n "${DATE_TAG:-}" ]; then
+            echo "$IMAGE:$DATE_TAG" >> /tmp/tags
+            echo "$IMAGE:$SHORT_SHA" >> /tmp/tags
+          fi
           cat /tmp/tags
 
       - name: Push (the tests already passed on this exact image)

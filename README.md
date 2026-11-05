@@ -48,7 +48,8 @@ Create a `docker-compose.yml` file with this content
 ```yml
 services:
   jupyter-quant:
-    image: gnzsnz/jupyter-quant:${IMAGE_VERSION}
+    # built and published by this repo's CI; change the owner if you run your own
+    image: ghcr.io/signalsenseuk/jupyterquant:2606.1-ss.1
     environment:
       APT_PROXY: ${APT_PROXY:-}
       BYODF: ${BYODF:-}

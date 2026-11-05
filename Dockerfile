@@ -2,8 +2,11 @@
 # Builder stage
 ###############################################################################
 # hadolint global ignore=DL3003,DL3008,SC2028,DL3013
-ARG IMG_PYTHON_VERSION=3.13
-FROM python:$IMG_PYTHON_VERSION AS builder
+# Base images pinned by digest (amd64 manifest, not the index: index digests churn
+# on attestation entries while the platform manifest stays put). Bump both together.
+#   python:3.13.18        -> sha256:bcaf104e...
+#   python:3.13.18-slim   -> sha256:48d88481...
+FROM python:3.13.18@sha256:bcaf104ef2827b827bdd0b8b351742783fc050296e1dc150113e6ec869e652d0 AS builder
 
 # Use TARGETARCH build argument
 ARG TARGETARCH
@@ -26,8 +29,7 @@ RUN python3 -m pip install --no-cache-dir -U \
 ###############################################################################
 # Final stage
 ###############################################################################
-ARG IMG_PYTHON_VERSION=3.13
-FROM python:${IMG_PYTHON_VERSION}-slim
+FROM python:3.13.18-slim@sha256:48d884813cf44e927cf64c5529dd630dd3b18338c6dc727991eef9b71e934a20
 
 # Use TARGETARCH build argument
 ARG TARGETARCH
@@ -44,7 +46,8 @@ ARG USER=quant
 ARG USER_ID=1500
 ARG USER_GID=1500
 ENV USER=${USER}
-ENV IMAGE_VERSION=2502.1
+ARG IMAGE_VERSION=dev
+ENV IMAGE_VERSION=${IMAGE_VERSION}
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_USER=true
