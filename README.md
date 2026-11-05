@@ -61,7 +61,7 @@ services:
     volumes:
       - quant_conf:/home/gordon/.config
       - quant_data:/home/gordon/.local
-      - ${PWD}/Notebooks:/home/gordon/Notebooks
+      - ${PWD}/Notebooks:/home/quant/Notebooks
 
 volumes:
   quant_conf:
@@ -103,7 +103,7 @@ Eventually, you would need to refresh (1) and less frequently (2)
 docker exec -it jupyterquant jupyter-server list
 Currently running servers:
 http://40798f7a604a:8888/?token=
-ebf9e870d2aa0ed877590eb83b4d3bbbdfbd55467422a167 :: /home/gordon/Notebooks
+ebf9e870d2aa0ed877590eb83b4d3bbbdfbd55467422a167 :: /home/quant/Notebooks
 ```
 
 or
@@ -180,7 +180,7 @@ the container starts up stow will create links like `/home/gordon/.bashrc`
 
 You need to define environment variable `SSH_KEY_DIR` which should point to a
 location with your keys. The suggested place is
-`SSH_KEYDIR=/home/gordon/Notebooks/etc/ssh`, make sure the director has the
+`SSH_KEYDIR=/home/quant/Notebooks/etc/ssh`, make sure the director has the
 right permissions. Something like `chmod 700 Notebooks/etc/ssh` should work.
 
 The `entrypoint.sh` script will create a symbolic link pointing to
@@ -201,7 +201,7 @@ ssh -fNL 4001:localhost:4001 gordon@bastion-ssh
 
 If you define `START_SCRIPTS` env variable with a path, all scripts on that
 directory will be executed at start up. The sample `.env-dist` file contains
-a commented line with `START_SCRIPTS=/home/gordon/Notebooks/etc/start_scripts`
+a commented line with `START_SCRIPTS=/home/quant/Notebooks/etc/start_scripts`
 as an example and recommended location.
 
 Files should have a `.sh` suffix and should run under `bash`. in directory

@@ -1,0 +1,94 @@
+name: Build, smoke-test and publish the qr image to GHCR
+
+# Replaces the three inherited workflows, which could not publish:
+#   - docker-publish.yml targeted Docker Hub samirsheldenkar/jupyter-quant (never existed -> 401)
+#     and the PyPI project name jupyter-quant (owned by upstream -> cannot publish)
+#   - docker-build-n-test.yml ran with continue-on-error: true, push: false, load: false and no
+#     tests, so a green check proved nothing
+#   - docker-base-image.yml failed daily until GitHub disabled it for inactivity
+#
+# Single-arch (linux/amd64) on purpose: the node is x86, and the multi-arch QEMU build took
+# ~2 hours. arm64 stays available for laptop use via `docker buildx build --platform`.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterquant
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # setuptools_scm needs tags
+
+      - name: Read build args
+        id: env
+        run: |
+          grep -v '#' .env-dist | grep '=' > .env
+          set -a; . ./.env; set +a
+          echo "user_id=${USER_ID}" >> "$GITHUB_OUTPUT"
+          echo "user_gid=${USER_GID}" >> "$GITHUB_OUTPUT"
+          echo "py=${IMG_PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build with load=true so the smoke test exercises the exact image that would be pushed.
+      # Nothing is published until the tests pass - a broken digest is worse than no digest.
+      - name: Build (not yet pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: qr-smoke:test
+          build-args: |
+            USER=quant
+            USER_ID=${{ steps.env.outputs.user_id }}
+            USER_GID=${{ steps.env.outputs.user_gid }}
+            IMG_PYTHON_VERSION=${{ steps.env.outputs.py }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: ./scripts/smoke.sh qr-smoke:test
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          short=$(git rev-parse --short HEAD)
+          date=$(date -u +%Y.%m.%d)
+          { echo "$IMAGE:$date-$short"; echo "$IMAGE:$date"; echo "$IMAGE:$short"; } > /tmp/tags
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then echo "$IMAGE:${GITHUB_REF_NAME}" >> /tmp/tags; fi
+          cat /tmp/tags
+
+      - name: Push (the tests already passed on this exact image)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          while read -r ref; do docker tag qr-smoke:test "$ref"; docker push "$ref"; done < /tmp/tags
+          first=$(head -1 /tmp/tags)
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$first" | cut -d@ -f2)
+          {
+            echo "## Pin this digest"
+            echo '```'
+            echo "$first@$digest"
+            echo '```'
+            echo "First push creates the package **private**. Flip visibility to public (needs a"
+            echo "write:packages PAT), then verify an anonymous pull from bero2 before pinning."
+          } >> "$GITHUB_STEP_SUMMARY"

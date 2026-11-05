@@ -38,9 +38,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 ENV APT_PROXY_FILE=/etc/apt/apt.conf.d/01proxy
 
-ENV USER=gordon
-ARG USER_ID="${USER_ID:-1000}"
-ARG USER_GID="${USER_GID:-1000}"
+# Identity is a build input, not a literal: compose and CI pass USER/USER_ID/USER_GID.
+# Upstream declared only `ARG USER_ID`, so a `USER` build-arg was silently discarded.
+ARG USER=quant
+ARG USER_ID=1500
+ARG USER_GID=1500
+ENV USER=${USER}
 ENV IMAGE_VERSION=2502.1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -80,7 +83,7 @@ RUN if [ -n "$APT_PROXY" ]; then \
     ;fi && \
   apt-get update && \
   apt-get install --no-install-recommends -y \
-    openssh-client sshpass sudo curl graphviz git tzdata unzip less xclip nano-tiny \
+    openssh-client sshpass curl graphviz git tzdata unzip less xclip nano-tiny \
     ffmpeg pandoc stow jq bash-completion procps fontconfig fonts-jetbrains-mono \
     fonts-dejavu-core fonts-firacode fonts-liberation2 && \
   apt-get clean && rm -rf /var/lib/apt/lists/* && \
@@ -89,9 +92,24 @@ RUN if [ -n "$APT_PROXY" ]; then \
   ;fi && \
   groupadd --gid "${USER_GID}" "${USER}" && \
   useradd -ms /bin/bash --uid "${USER_ID}" --gid "${USER_GID}" "${USER}" && \
-  echo "${USER} ALL=(ALL) NOPASSWD:ALL" | tee -a /etc/sudoers && \
   fc-cache -fv && \
   python -c "import compileall; compileall.compile_path(maxlevels=10)"
+
+# supercronic — static Go binary, cron syntax, logs to stdout. Pinned version and per-arch
+# checksum: the image is published publicly, so nothing enters a layer unverified.
+ARG SUPERCRONIC_VERSION=v0.2.51
+RUN set -eux; \
+  case "${TARGETARCH}" in \
+    amd64) sha=cc232108374e8e2b537045f2d5eaa1229f619db314c3ba6a14d38b35dc0aa123 ;; \
+    arm64) sha=4ae22576a78223d8ccdf5f3b3660a5cbb5288416bf0ca96afc4a36d195932b94 ;; \
+    *) echo "unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSLo /tmp/supercronic \
+    "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}"; \
+  echo "${sha}  /tmp/supercronic" | sha256sum -c -; \
+  install -m 0755 /tmp/supercronic /usr/local/bin/supercronic; \
+  rm -f /tmp/supercronic; \
+  supercronic -version
 
 USER $USER_ID:$USER_GID
 
@@ -106,12 +124,18 @@ RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels \
   mkdir "${JUPYTER_SERVER_ROOT}"
 
 COPY entrypoint.sh /
+COPY scripts/equity-update.sh /opt/qr/pipelines/equity-update.sh
+COPY docker/pipelines.crontab /etc/supercronic/crontab
 WORKDIR ${JUPYTER_SERVER_ROOT}
 
 CMD ["jupyter-lab", "--no-browser", "--ip=0.0.0.0"]
 ENTRYPOINT ["/entrypoint.sh"]
 
 EXPOSE 8888
+
+# /api is unauthenticated in Jupyter and returns 200 only when the server is actually serving.
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8888/api >/dev/null || exit 1
 
 LABEL org.opencontainers.image.source=https://github.com/quantbelt/jupyter-quant
 LABEL org.opencontainers.image.url=https://github.com/quantbelt/jupyter-quant/pkgs/container/jupyter-quant
