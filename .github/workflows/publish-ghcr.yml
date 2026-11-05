@@ -13,6 +13,9 @@ name: Build, smoke-test and publish the qr image to GHCR
 on:
   push:
     tags: ["v*"]
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
   workflow_dispatch:
 
 env:
