@@ -9,10 +9,10 @@ services:
         USER: ${USER}
         USER_ID: ${USER_ID}
         USER_GID: ${USER_GID}
-        IMG_PYTHON_VERSION: ${IMG_PYTHON_VERSION}
         APT_PROXY: ${APT_PROXY}
-        IMAGE_VERSION: ${IMAGE_VERSION}
-    image: gnzsnz/jupyter-quant:${IMAGE_VERSION}
+    # not upstream's gnzsnz/jupyter-quant (different uid, different base): set the full
+    # published reference, e.g. ghcr.io/signalsenseuk/jupyterquant:2606.1-ss.1
+    image: ${IMAGE_REF:?set IMAGE_REF to the published ghcr reference}
     environment:
       APT_PROXY: ${APT_PROXY}
       BYODF: ${BYODF:-}

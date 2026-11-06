@@ -1,0 +1,14 @@
+# Pipeline schedule for the qr research node.
+#
+# Baked into the image on purpose: the schedule is part of the pipeline definition, so a change
+# shows up as a git diff and a digest bump instead of an untracked edit to a bind-mounted file.
+# supercronic reads this file and logs to stdout.
+#
+# P1 - equities/ETF update. Verified alive 2026-11-04 (339 symbols, data repo pushed ab3acb174).
+# Runs Mon-Fri; the checkout and its venv live under the work/ bind mount, not in the image.
+0 23 * * 1-5  /opt/qr/pipelines/equity-update.sh
+#
+# P2 (Barchart trend scrape) REMOVED - vendor access expired 2026-07-27; it had been a daily
+# no-op exiting 0 for 100 days. Do not reinstate without a working credential.
+#
+# P3 (derived pst store rebuild) is a one-off migration step, not a schedule.

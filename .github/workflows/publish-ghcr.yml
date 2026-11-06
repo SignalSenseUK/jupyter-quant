@@ -1,0 +1,112 @@
+name: Build, smoke-test and publish the qr image to GHCR
+
+# Replaces the three inherited workflows, which could not publish:
+#   - docker-publish.yml targeted Docker Hub samirsheldenkar/jupyter-quant (never existed -> 401)
+#     and the PyPI project name jupyter-quant (owned by upstream -> cannot publish)
+#   - docker-build-n-test.yml ran with continue-on-error: true, push: false, load: false and no
+#     tests, so a green check proved nothing
+#   - docker-base-image.yml failed daily until GitHub disabled it for inactivity
+#
+# Single-arch (linux/amd64) on purpose: the node is x86, and the multi-arch QEMU build took
+# ~2 hours. The base is pinned to the amd64 manifest, so an arm64 build needs
+# `--platform linux/amd64` under emulation rather than a different base.
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  workflow_dispatch:
+
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # setuptools_scm needs tags
+
+      # One source for both the published ref and the version baked into the image.
+      # GHCR paths must be lowercase; github.repository_owner keeps the account's case.
+      - name: Image path and version
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jupyterquant" >> "$GITHUB_ENV"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            d="$(date -u +%Y.%m.%d)"; s="$(git rev-parse --short HEAD)"
+            v="$d-$s"
+            echo "DATE_TAG=$d" >> "$GITHUB_ENV"
+            echo "SHORT_SHA=$s" >> "$GITHUB_ENV"
+          fi
+          echo "IMAGE_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Read build args
+        id: env
+        run: |
+          grep -v '#' .env-dist | grep '=' > .env
+          set -a; . ./.env; set +a
+          echo "user_id=${USER_ID}" >> "$GITHUB_OUTPUT"
+          echo "user_gid=${USER_GID}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build with load=true so the smoke test exercises the exact image that would be pushed.
+      # Nothing is published until the tests pass - a broken digest is worse than no digest.
+      - name: Build (not yet pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: qr-smoke:test
+          build-args: |
+            USER=quant
+            USER_ID=${{ steps.env.outputs.user_id }}
+            USER_GID=${{ steps.env.outputs.user_gid }}
+            IMAGE_VERSION=${{ env.IMAGE_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: ./scripts/smoke.sh qr-smoke:test
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+        run: |
+          echo "$IMAGE:$IMAGE_VERSION" > /tmp/tags
+          # branch builds also get the date and commit tags, from the same computation
+          if [ -n "${DATE_TAG:-}" ]; then
+            echo "$IMAGE:$DATE_TAG" >> /tmp/tags
+            echo "$IMAGE:$SHORT_SHA" >> /tmp/tags
+          fi
+          cat /tmp/tags
+
+      - name: Push (the tests already passed on this exact image)
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+        run: |
+          while read -r ref; do docker tag qr-smoke:test "$ref"; docker push "$ref"; done < /tmp/tags
+          first=$(head -1 /tmp/tags)
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$first" | cut -d@ -f2)
+          {
+            echo "## Pin this digest"
+            echo '```'
+            echo "$first@$digest"
+            echo '```'
+            echo "First push creates the package **private**. Flip visibility to public (needs a"
+            echo "write:packages PAT), then verify an anonymous pull from bero2 before pinning."
+          } >> "$GITHUB_STEP_SUMMARY"

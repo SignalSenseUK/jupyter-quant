@@ -13,13 +13,6 @@ set -e
 
 DAEMON=jupyter-lab
 
-# APT Proxy Cache
-if [ -n "${APT_PROXY}" ]; then
-	echo "> Setting apt proxy 📌"
-	echo "Acquire::http { Proxy \"${APT_PROXY}\"; }" |
-		sudo tee /etc/apt/apt.conf.d/01proxy
-fi
-
 # dotfiles
 if [ -d "$BYODF" ]; then
 	echo "> setting dotfiles 📌 at $BYODF"
