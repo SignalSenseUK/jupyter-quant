@@ -88,7 +88,11 @@ jobs:
       - name: Tag
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
         run: |
-          echo "$IMAGE:$IMAGE_VERSION" > /tmp/tags
+          # PEP 440 local versions carry a '+' (v2606.1+ss.1); '+' is not legal in a
+          # registry tag, so render it as '-' here. IMAGE_VERSION itself stays untouched
+          # so the wheel version and the image env still agree.
+          REF="${IMAGE_VERSION//+/-}"
+          echo "$IMAGE:$REF" > /tmp/tags
           # branch builds also get the date and commit tags, from the same computation
           if [ -n "${DATE_TAG:-}" ]; then
             echo "$IMAGE:$DATE_TAG" >> /tmp/tags
