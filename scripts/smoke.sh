@@ -33,7 +33,9 @@ ok "supercronic"
 
 # the verifier path the deploy depends on: jupyter_server imports argon2 with no fallback, so a
 # missing argon2-cffi fails the password step at the last moment. Assert the real call, not the import.
-alg=$(docker run --rm "$IMG" python -c \
+# --entrypoint python: the image's entrypoint prints a banner to stdout, which would otherwise
+# be captured along with the algorithm ("got '> Running Jupyter-lab ... argon2'").
+alg=$(docker run --rm --entrypoint python "$IMG" -c \
   'from jupyter_server.auth.security import passwd; print(passwd("smoke").split(":")[0])' 2>/dev/null || true)
 [ "$alg" = "argon2" ] || fail "jupyter_server.auth.passwd did not produce an argon2 verifier (got '${alg:-none}')"
 ok "argon2 verifier"
