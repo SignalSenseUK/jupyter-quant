@@ -1,0 +1,35 @@
+name: Base image drift
+
+# The Dockerfile pins both base images by digest. That is what makes the build
+# reproducible, and it is also why an upstream rebuild - a Debian security
+# update inside python:3.13.18-slim - never reaches this repo on its own. A
+# floating tag would have picked it up; a pin needs something to look.
+#
+# This looks, daily: for every `FROM image@sha256:...` it resolves the tag's
+# current linux/amd64 manifest digest and compares. No docker daemon, no build
+# minutes, no dependency on the image actually building.
+#
+# Drift opens (or comments on) an issue titled "Base image drift detected" and
+# fails the run, so it is visible in Actions as well as in notifications.
+# A failure of the check itself exits 2 rather than passing quietly.
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # daily, 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: Pinned base digests vs upstream tags
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare pinned digests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/base-image-drift.py
