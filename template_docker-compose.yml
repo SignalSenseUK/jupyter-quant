@@ -20,7 +20,7 @@ services:
       # START_SCRIPTS: ${START_SCRIPTS:-}
       # SSH_PASSPHRASE: ${SSH_PASSPHRASE:-}
       # SSH_PASSPHRASE_FILE: ${SSH_PASSPHRASE_FILE:-}
-      TZ: ${QUANT_TZ:-}
+      TZ: ${QUANT_TZ:-Europe/London}
     restart: unless-stopped
     ports:
       - ${LISTEN_PORT}:8888
