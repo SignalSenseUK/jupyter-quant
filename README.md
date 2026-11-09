@@ -55,7 +55,7 @@ services:
       BYODF: ${BYODF:-}
       SSH_KEYDIR: ${SSH_KEYDIR:-}
       START_SCRIPTS: ${START_SCRIPTS:-}
-      TZ: ${QUANT_TZ:-}
+      TZ: ${QUANT_TZ:-Europe/London}
     restart: unless-stopped
     ports:
       - ${LISTEN_PORT}:8888

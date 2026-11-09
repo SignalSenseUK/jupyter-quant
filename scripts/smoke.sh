@@ -31,6 +31,13 @@ docker run --rm "$IMG" supercronic -version >/dev/null || fail "supercronic not 
 docker run --rm "$IMG" test -f /etc/supercronic/crontab || fail "crontab missing"
 ok "supercronic"
 
+# the verifier path the deploy depends on: jupyter_server imports argon2 with no fallback, so a
+# missing argon2-cffi fails the password step at the last moment. Assert the real call, not the import.
+alg=$(docker run --rm "$IMG" python -c \
+  'from jupyter_server.auth.security import passwd; print(passwd("smoke").split(":")[0])' 2>/dev/null || true)
+[ "$alg" = "argon2" ] || fail "jupyter_server.auth.passwd did not produce an argon2 verifier (got '${alg:-none}')"
+ok "argon2 verifier"
+
 # identity is the build arg, not a leftover literal
 docker run --rm "$IMG" id -u | grep -qx "1500" || fail "container uid is not 1500"
 ok "uid 1500"

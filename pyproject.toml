@@ -60,6 +60,9 @@ dependencies = [
     "yellowbrick==1.5",
     "zipline-reloaded==3.2.1",
     # research environment additions (qr node spec §13.1)
+    # argon2-cffi: jupyter_server defaults to algorithm="argon2" and imports argon2 with no
+    # fallback, so without it `jupyter server password` raises instead of writing a verifier.
+    "argon2-cffi==25.1.0",
     "duckdb==2.0.0",
     "polars==2.1.0",
     "jupytext==1.19.6",
