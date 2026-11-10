@@ -34,6 +34,11 @@ ok "curl present"
 # supercronic installed and executable for this arch
 docker run --rm "$IMG" supercronic -version >/dev/null || fail "supercronic not runnable"
 docker run --rm "$IMG" test -f /etc/supercronic/crontab || fail "crontab missing"
+# -test parses the crontab without running anything (supercronic v0.2.51). A syntax error would
+# otherwise surface only when the pipelines container starts on the node, where restart:
+# unless-stopped turns it into a loop rather than a failed deploy.
+docker run --rm "$IMG" supercronic -test /etc/supercronic/crontab >/dev/null 2>&1 \
+  || fail "crontab does not parse"
 ok "supercronic"
 
 # the verifier path the deploy depends on: jupyter_server imports argon2 with no fallback, so a
