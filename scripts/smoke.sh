@@ -26,6 +26,11 @@ if docker run --rm "$IMG" sh -c 'command -v sudo' 2>/dev/null | grep -q .; then
 fi
 ok "no sudo"
 
+# curl: the compose healthcheck probes /api with it, so a missing curl turns every healthcheck
+# red rather than the container down - the failure surfaces as "unhealthy" with no obvious cause.
+docker run --rm "$IMG" sh -c 'command -v curl' >/dev/null || fail "curl missing: the healthcheck needs it"
+ok "curl present"
+
 # supercronic installed and executable for this arch
 docker run --rm "$IMG" supercronic -version >/dev/null || fail "supercronic not runnable"
 docker run --rm "$IMG" test -f /etc/supercronic/crontab || fail "crontab missing"
